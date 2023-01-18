@@ -2,3 +2,8 @@ fastapi~=0.89
 jinja2~=3.1
 uvicorn~=0.20
 websockets~=10.4
+
+# linters
+mypy~=0.991
+flake8~=6.0
+isort~=5.11

@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Dict, Hashable, Iterable, Optional
 
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,21 +24,26 @@ app.add_middleware(
 
 
 class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
+    def __init__(self) -> None:
+        self.active_connections: Dict[Hashable, WebSocket] = dict()
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, _id: Hashable, websocket: WebSocket) -> None:
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections[_id] = websocket
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    def disconnect(self, _id: Hashable) -> None:
+        self.active_connections.pop(_id)
 
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
+    async def send_personal_message(self, _id: Hashable, message: str) -> None:
+        await self.active_connections[_id].send_text(message)
 
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
+    async def broadcast(
+        self, message: str, excluded_hashes: Optional[Iterable[Hashable]] = None
+    ) -> None:
+        for key, connection in self.active_connections.items():
+            if key in (excluded_hashes or ()):
+                continue
+
             await connection.send_text(message)
 
 
@@ -51,14 +56,19 @@ async def get(request: Request) -> Response:
 
 
 @app.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: int):
-    await manager.connect(websocket)
-    await manager.broadcast(f"Client {client_id} joined the chat")
+async def websocket_endpoint(websocket: WebSocket, client_id: int) -> None:
+    await manager.connect(_id=client_id, websocket=websocket)
+    await manager.broadcast(message=f"Client {client_id}: joined the chat")
     try:
         while True:
             data = await websocket.receive_text()
-            await manager.send_personal_message(f"You wrote: {data}", websocket)
-            await manager.broadcast(f"Client #{client_id} says: {data}")
+            await manager.send_personal_message(
+                _id=client_id, message=f"You wrote: {data}"
+            )
+            await manager.broadcast(
+                message=f"Client #{client_id} says: {data}",
+                excluded_hashes=(client_id,),
+            )
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        await manager.broadcast(f"Client #{client_id} left the chat")
+        manager.disconnect(client_id)
+        await manager.broadcast(message=f"Client #{client_id} left the chat")
