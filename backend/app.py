@@ -1,11 +1,15 @@
+import os
 from typing import List
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-
+from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
+
+template_path = os.path.join(os.path.dirname(__file__), "templates")
+templates = Jinja2Templates(directory=template_path)
+
 
 origins = [
     "http://localhost:8080",
@@ -17,50 +21,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-html = """
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>Chat</title>
-    </head>
-    <body>
-        <h1>WebSocket Chat</h1>
-        <h2>Your ID: <span id="ws-id"></span></h2>
-        <form action="" onsubmit="sendMessage(event)">
-            <input type="text" id="messageText" autocomplete="off"/>
-            <button>Send</button>
-        </form>
-        <ul id="messages">
-        </ul>
-        <script>
-            var scheme = "ws";
-            var loc_obj = document.location;
-            if (loc_obj.protocol === "https:") { scheme += "s"; }
-            var client_id = Date.now()
-            document.querySelector("#ws-id").textContent = client_id;
-            
-            serverUrl = `${scheme}://${loc_obj.hostname}:${loc_obj.port}/ws/${client_id}`;
-            var ws = new WebSocket(serverUrl);
-            
-            ws.onmessage = function(event) {
-                var messages = document.getElementById("messages")
-                var message = document.createElement("li")
-                var content = document.createTextNode(event.data)
-                message.appendChild(content)
-                messages.appendChild(message)
-            }
-            
-            function sendMessage(event) {
-                var input = document.getElementById("messageText")
-                ws.send(input.value)
-                input.value = ""
-                event.preventDefault()
-            }
-        </script>
-    </body>
-</html>
-"""
 
 
 class ConnectionManager:
@@ -86,8 +46,8 @@ manager = ConnectionManager()
 
 
 @app.get("/")
-async def get():
-    return HTMLResponse(html)
+async def get(request: Request) -> Response:
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.websocket("/ws/{client_id}")
